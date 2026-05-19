@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.integrate import solve_ivp
-import matplotlib.pyplot as plt
 import os
 
 # Гравитационный параметр Земли, км^3 / с^2
@@ -19,7 +18,7 @@ t_eval = np.linspace(t_start, t_end, num_points)
 # Начальное состояние первого космического аппарата
 
 state_1 = np.array([
-    7010, 0, 0,
+    7008, 0, 0,
     0, 7.546, 0
 ])
 
@@ -27,7 +26,7 @@ state_1 = np.array([
 # второго 
 
 state_2 = np.array([
-    7000, 10, 0,
+    -7000, 10, 0,
     0, 0, 7.546
 ])
 
@@ -64,109 +63,129 @@ def spacecraft_motion(t, state):
         vx, vy, vz,
         ax, ay, az
     ]
+def calculate_distances(positions_1, positions_2):
+    """
+    Считает расстояние между двумя КА в каждый момент времени.
 
-# Численно рассчитываем траекторию первого аппарата
-solution_1 = solve_ivp(
-    fun=spacecraft_motion,
-    t_span=(t_start, t_end),
-    y0=state_1,
-    t_eval=t_eval,
-    rtol=1e-9,
-    atol=1e-9
-)
+    positions_1 — координаты первого КА, массив размера N x 3
+    positions_2 — координаты второго КА, массив размера N x 3
 
-# Численно рассчитываем траекторию второго аппарата
-solution_2 = solve_ivp(
-    fun=spacecraft_motion,
-    t_span=(t_start, t_end),
-    y0=state_2,
-    t_eval=t_eval,
-    rtol=1e-9,
-    atol=1e-9
-)
+    Возвращает массив расстояний размера N.
+    """
 
-# Проверяем, что интегрирование прошло успешно
-if not solution_1.success:
-    raise RuntimeError("Ошибка при расчёте траектории первого КА")
+    relative_positions = positions_1 - positions_2
+    distances = np.linalg.norm(relative_positions, axis=1)
 
-if not solution_2.success:
-    raise RuntimeError("Ошибка при расчёте траектории второго КА")
+    return distances
 
 
-# Достаём координаты аппаратов из решения
-# solution.y имеет форму 6 x N:
-# первые 3 строки — координаты x, y, z
-# последние 3 строки — скорости vx, vy, vz
-positions_1 = solution_1.y[0:3].T
-positions_2 = solution_2.y[0:3].T
+def find_closest_approach(t_eval, distances):
+    """
+    Находит минимальное расстояние и момент максимального сближения.
+
+    t_eval — массив времени
+    distances — массив расстояний между КА
+    """
+
+    min_index = np.argmin(distances)
+
+    min_distance = distances[min_index]
+    time_of_closest_approach = t_eval[min_index]
+
+    return min_distance, time_of_closest_approach
 
 
-print("Траектория первого КА рассчитана:", positions_1.shape)
-print("Траектория второго КА рассчитана:", positions_2.shape)
+def classify_conjunction(min_distance, danger_threshold):
+    """
+    Классифицирует сближение по порогу опасности.
+    """
 
-# Считаем относительный вектор между аппаратами
-relative_positions = positions_1 - positions_2
+    if min_distance < danger_threshold:
+        return "ПОТЕНЦИАЛЬНО ОПАСНОЕ СБЛИЖЕНИЕ"
 
-# Считаем расстояние между аппаратами в каждый момент времени
-distances = np.linalg.norm(relative_positions, axis=1)
+    return "Безопасное сближение в рамках модели"
+def main():
+    # Численно рассчитываем траекторию первого аппарата
+    solution_1 = solve_ivp(
+        fun=spacecraft_motion,
+        t_span=(t_start, t_end),
+        y0=state_1,
+        t_eval=t_eval,
+        rtol=1e-9,
+        atol=1e-9
+    )
 
-print("Расстояния рассчитаны:", distances.shape)
-print("Первое расстояние:", distances[0], "км")
+    # Численно рассчитываем траекторию второго аппарата
+    solution_2 = solve_ivp(
+        fun=spacecraft_motion,
+        t_span=(t_start, t_end),
+        y0=state_2,
+        t_eval=t_eval,
+        rtol=1e-9,
+        atol=1e-9
+    )
 
-# Находим индекс минимального расстояния
-min_index = np.argmin(distances)
+    if not solution_1.success:
+        raise RuntimeError("Ошибка при расчёте траектории первого КА")
 
-# Минимальное расстояние между аппаратами
-min_distance = distances[min_index]
+    if not solution_2.success:
+        raise RuntimeError("Ошибка при расчёте траектории второго КА")
 
-# Момент времени, когда произошло максимальное сближение
-time_of_closest_approach = t_eval[min_index]
+    positions_1 = solution_1.y[0:3].T
+    positions_2 = solution_2.y[0:3].T
 
-print("Минимальное расстояние:", min_distance, "км")
-print("Момент максимального сближения:", time_of_closest_approach, "с")
+    print("Траектория первого КА рассчитана:", positions_1.shape)
+    print("Траектория второго КА рассчитана:", positions_2.shape)
 
-# Классифицируем событие сближения
-if min_distance < danger_threshold:
-    status = "ПОТЕНЦИАЛЬНО ОПАСНОЕ СБЛИЖЕНИЕ"
-else:
-    status = "Безопасное сближение в рамках модели"
+    distances = calculate_distances(positions_1, positions_2)
 
+    print("Расстояния рассчитаны:", distances.shape)
+    print("Первое расстояние:", distances[0], "км")
 
-print("Порог опасности:", danger_threshold, "км")
-print("Статус:", status)
+    min_distance, time_of_closest_approach = find_closest_approach(
+        t_eval,
+        distances
+    )
 
-# Создаём папку для результатов
-os.makedirs("results", exist_ok=True)
+    print("Минимальное расстояние:", min_distance, "км")
+    print("Момент максимального сближения:", time_of_closest_approach, "с")
 
-# Сохраняем траектории и расстояние между КА
-trajectories_data = np.column_stack([
-    t_eval,
-    positions_1,
-    positions_2,
-    distances
-])
+    status = classify_conjunction(min_distance, danger_threshold)
 
-np.savetxt(
-    "results/trajectories.csv",
-    trajectories_data,
-    delimiter=",",
-    header="time_s,x1_km,y1_km,z1_km,x2_km,y2_km,z2_km,distance_km",
-    comments="",
-    fmt="%.6f"
-)
+    print("Порог опасности:", danger_threshold, "км")
+    print("Статус:", status)
 
-# Сохраняем краткий итог расчёта
-summary_data = np.array([
-    [min_distance, time_of_closest_approach, danger_threshold]
-])
+    os.makedirs("results", exist_ok=True)
 
-np.savetxt(
-    "results/summary.csv",
-    summary_data,
-    delimiter=",",
-    header="min_distance_km,time_of_closest_approach_s,danger_threshold_km",
-    comments="",
-    fmt="%.6f"
-)
+    trajectories_data = np.column_stack([
+        t_eval,
+        positions_1,
+        positions_2,
+        distances
+    ])
 
-print("Результаты сохранены в папку results")
+    np.savetxt(
+        "results/trajectories.csv",
+        trajectories_data,
+        delimiter=",",
+        header="time_s,x1_km,y1_km,z1_km,x2_km,y2_km,z2_km,distance_km",
+        comments="",
+        fmt="%.6f"
+    )
+
+    summary_data = np.array([
+        [min_distance, time_of_closest_approach, danger_threshold]
+    ])
+
+    np.savetxt(
+        "results/summary.csv",
+        summary_data,
+        delimiter=",",
+        header="min_distance_km,time_of_closest_approach_s,danger_threshold_km",
+        comments="",
+        fmt="%.6f"
+    )
+
+    print("Результаты сохранены в папку results")
+if __name__ == "__main__":
+    main()
